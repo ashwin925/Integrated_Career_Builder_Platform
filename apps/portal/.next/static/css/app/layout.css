@@ -604,6 +604,9 @@ video {
 .max-w-\[30ch\] {
   max-width: 30ch;
 }
+.grid-cols-1 {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
 .flex-col {
   flex-direction: column;
 }
@@ -615,6 +618,9 @@ video {
 }
 .justify-between {
   justify-content: space-between;
+}
+.gap-4 {
+  gap: 1rem;
 }
 .rounded-lg {
   border-radius: 0.5rem;
@@ -689,6 +695,16 @@ video {
 
   .motion-reduce\:transform-none {
     transform: none;
+  }
+}
+@media (min-width: 640px) {
+
+  .sm\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sm\:gap-6 {
+    gap: 1.5rem;
   }
 }
 @media (min-width: 1024px) {

@@ -7,7 +7,7 @@ export default function Home() {
         <h1 className="text-4xl font-bold text-center">Welcome to the Campus Platform Portal</h1>
       </div>
 
-      <div className="mt-12 grid text-center lg:grid-cols-3 lg:gap-8">
+      <div className="mt-12 grid text-center grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
         <Link href="http://localhost:3001" className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30">
           <h2 className="mb-3 text-2xl font-semibold">
             SCB{' '}
