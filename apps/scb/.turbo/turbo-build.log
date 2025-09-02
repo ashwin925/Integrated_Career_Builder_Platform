@@ -1,0 +1,32 @@
+
+> scb@0.1.0 build C:\Users\ASHWIN SUNDAR\Desktop\ICBP\campus-platform\apps\scb
+> next build
+
+   ▲ Next.js 15.5.2
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 12.9s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/8) ...
+   Generating static pages (2/8) 
+   Generating static pages (4/8) 
+   Generating static pages (6/8) 
+ ✓ Generating static pages (8/8)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                    3.45 kB         106 kB
+├ ○ /_not-found                            992 B         103 kB
+├ ○ /jr-welcome                            129 B         102 kB
+├ ○ /lms-welcome                           129 B         102 kB
+└ ○ /scb-welcome                           129 B         102 kB
++ First Load JS shared by all             102 kB
+  ├ chunks/801-5de57fc066d61f04.js       45.9 kB
+  ├ chunks/f257f879-aa840aa4d87b8ef6.js  54.2 kB
+  └ other shared chunks (total)          1.97 kB
+
+
+○  (Static)  prerendered as static content
+
