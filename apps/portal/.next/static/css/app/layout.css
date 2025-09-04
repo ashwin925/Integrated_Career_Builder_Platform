@@ -586,6 +586,9 @@ video {
 .flex {
   display: flex;
 }
+.table {
+  display: table;
+}
 .grid {
   display: grid;
 }
@@ -615,6 +618,9 @@ video {
 }
 .justify-between {
   justify-content: space-between;
+}
+.gap-4 {
+  gap: 1rem;
 }
 .gap-8 {
   gap: 2rem;
@@ -665,6 +671,9 @@ video {
 }
 .opacity-50 {
   opacity: 0.5;
+}
+.filter {
+  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }
 .transition-colors {
   transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
