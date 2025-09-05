@@ -1,9 +1,0 @@
-{
-  "name": "@shared/types",
-  "version": "0.0.1",
-  "main": "src/index.ts",
-  "type": "module",
-  "dependencies": {
-    "zod": "^3.23.0"
-  }
-}

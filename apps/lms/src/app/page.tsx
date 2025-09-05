@@ -1,40 +1,17 @@
-import { createClient } from '@/utils/supabase/server'
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
-import RoleRequestForm from './RoleRequestForm'
 
-export default async function Page() {
-  const cookieStore = cookies()
-  const supabase = createClient()
+import React from 'react';
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-
-  if (!session) {
-    redirect('http://localhost:3000')
-  }
-
-  const { data: roleData } = await supabase
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', session.user.id)
-    .eq('app_name', 'lms')
-    .single()
-
+export default function LmsWelcomePage() {
   return (
-    <div>
-      {roleData ? (
-        <h1>
-          Welcome, {roleData.role} ({session.user.email})
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900">
+      <div className="text-center p-8">
+        <h1 className="text-4xl md:text-5xl font-bold text-gray-800 dark:text-white mb-4">
+          Welcome to LMS
         </h1>
-      ) : (
-        <div>
-          <h1>Welcome, {session.user.email}</h1>
-          <p>You don`&apos;`t have a role assigned for the LMS application yet.</p>
-          <RoleRequestForm userId={session.user.id} appName="lms" />
-        </div>
-      )}
+        <p className="text-lg text-gray-600 dark:text-gray-300">
+          This is the Learning Management System application.
+        </p>
+      </div>
     </div>
-  )
+  );
 }

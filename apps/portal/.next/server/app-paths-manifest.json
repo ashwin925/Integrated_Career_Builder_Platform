@@ -1,7 +1,4 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/page": "app/page.js",
-  "/dashboard/page": "app/dashboard/page.js",
-  "/auth/callback/route": "app/auth/callback/route.js",
-  "/super-admin-login/page": "app/super-admin-login/page.js"
+  "/page": "app/page.js"
 }
