@@ -1,178 +1,182 @@
-// apps/super-admin/src/app/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "../../lib/supabaseClient";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
-type CheckResult = { ok: boolean; isAdmin?: boolean; message?: string };
+interface AccessRequest {
+  id: string;
+  email: string;
+  app: string;
+  requested_role: string;
+  status: string;
+  user_id: string;
+}
 
-export default function SuperAdminApp() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [requests, setRequests] = useState<any[]>([]);
-  const [viewingRequests, setViewingRequests] = useState(false);
-
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      setMsg(null);
-
-      try {
-        const {
-          data: { session },
-          error: sessionErr,
-        } = await supabase.auth.getSession();
-
-        if (sessionErr) {
-          console.error("[super-admin] getSession error", sessionErr);
-          setMsg("Session fetch failed.");
-          setLoading(false);
-          return;
-        }
-
-        if (!session?.user) {
-          setLoading(false);
-          return;
-        }
-
-        setEmail(session.user.email ?? null);
-
-        // Query super_admins table safely
-        const { data, error, status } = await supabase
-          .from("super_admins")
-          .select("id")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (error) {
-          // Expose clear error message but keep friendly UI
-          console.error("[super-admin] table check error", { error, status });
-          setMsg(`Authorization check failed: ${error.message}`);
-          setIsAdmin(false);
-          setLoading(false);
-          return;
-        }
-
-        if (data && data.id) {
-          setIsAdmin(true);
-        } else {
-          setIsAdmin(false);
-        }
-      } catch (err) {
-        console.error("[super-admin] unexpected error:", err);
-        setMsg("Unexpected error. See console.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    init();
-  }, []);
-
-  const handleLogin = async () => {
-    try {
-      await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: "http://localhost:3003" },
-      });
-    } catch (err) {
-      console.error("[super-admin] oauth error", err);
-      setMsg("Login failed, check console for details.");
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      setEmail(null);
-      setIsAdmin(false);
-    } catch (err) {
-      console.error("[super-admin] signOut error", err);
-      setMsg("Logout failed. See console.");
-    }
-  };
-
-  const fetchRequests = async () => {
-  const { data, error } = await supabase
-    .from("access_requests")
-    .select("*")
-    .eq("status", "pending");
-
-  if (error) {
-    alert("❌ Failed to load requests: " + error.message);
-  } else {
-    setRequests(data);
-    setViewingRequests(true);
-  }
+const roleOptions = {
+  SCB: ["student", "admin"],
+  LMS: ["student", "teacher", "admin"],
+  JR: ["student", "admin", "recruiter"],
 };
 
+export default function SuperAdminPage() {
+  const supabase = createClientComponentClient();
+  const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchRequests = async () => {
+    const { data, error } = await supabase.from("access_requests").select("*");
+    if (error) {
+      console.error("Error fetching requests:", error.message);
+    } else if (data) {
+      setRequests(data);
+    }
+  };
+
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const handleDecision = async (
+    request: AccessRequest,
+    decision: "approve" | "reject",
+    newRole?: string
+  ) => {
+    setLoading(true);
+
+    try {
+      if (decision === "approve" && newRole) {
+  // 1. Ensure profile exists first (RLS-safe)
+  const { error: profileError } = await supabase.rpc("insert_profile_for_user", {
+    p_user_id: request.user_id,
+    p_email: request.email,
+  });
+  if (profileError) throw profileError;
+
+// 2. Insert or update role in user_roles (RLS-safe)
+const { error: roleError } = await supabase.rpc("insert_user_role", {
+  p_user_id: request.user_id,
+  p_app: request.app,
+  p_role: newRole,
+});
+if (roleError) throw roleError;
+
+
+  // 3. Update request status
+  const { error: reqError } = await supabase
+    .from("access_requests")
+    .update({ status: "approved" })
+    .eq("id", request.id);
+  if (reqError) throw reqError;
+}
+ else if (decision === "reject") {
+        const { error } = await supabase
+          .from("access_requests")
+          .update({ status: "rejected" })
+          .eq("id", request.id);
+
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Decision error:", err);
+    } finally {
+      setLoading(false);
+      fetchRequests();
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this request?")) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from("access_requests").delete().eq("id", id);
+      if (error) throw error;
+    } catch (err) {
+      console.error("Delete error:", err);
+    } finally {
+      setLoading(false);
+      fetchRequests();
+    }
+  };
+
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background dark:bg-gray-900 text-foreground p-6">
-      <div className="max-w-2xl w-full bg-card dark:bg-gray-800 rounded-xl shadow-2xl border border-white/5 p-6">
-        <h1 className="text-3xl font-bold mb-2">Super Admin</h1>
-        <p className="text-muted-foreground mb-4">Admin panel (restricted).</p>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background dark:bg-gray-900 text-foreground dark:text-gray-100 p-4">
+      <div className="bg-card dark:bg-gray-800 p-6 rounded-xl shadow-lg w-full max-w-3xl">
+        <h1 className="text-2xl font-bold mb-4">Super Admin Dashboard</h1>
 
-        {loading ? (
-          <div className="text-sm text-muted-foreground">Loading...</div>
-        ) : !email ? (
-          <div className="space-y-4">
-            <p className="text-sm">Please log in with Google to continue.</p>
-            <div className="flex gap-3">
-              <button onClick={handleLogin} className="px-4 py-2 rounded-lg bg-primary/90 transition-all duration-300 hover:scale-105">
-                Login with Google
-              </button>
-            </div>
-            {msg && <div className="text-rose-400 text-sm mt-2">{msg}</div>}
-          </div>
-        ) : !isAdmin ? (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Access Denied — your account is not a super admin.</p>
-            <div className="flex items-center gap-3">
-              <div className="text-sm">Signed in as: <span className="font-medium">{email}</span></div>
-              <button onClick={handleLogout} className="px-3 py-1 rounded-md bg-red-600 text-white ml-auto">Logout</button>
-            </div>
-            {msg && <div className="text-rose-400 text-sm mt-2">{msg}</div>}
-          </div>
+        {requests.length === 0 ? (
+          <p>No pending requests.</p>
         ) : (
-          <div className="space-y-4">
-            <p className="text-sm">Welcome, <span className="font-medium">{email}</span> — you are a Super Admin.</p>
-            {/* Dashboard: pending requests preview and quick assign UI could go here.
-                For now we keep a minimal panel but with hooks to expand. */}
-            <div className="mt-6">
-                <button
-                  onClick={fetchRequests}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 transition-all"
-                >
-                  View Pending Requests
-                </button>
-
-                {viewingRequests && (
-                  <div className="mt-4 bg-card dark:bg-gray-800 p-4 rounded-lg shadow-lg">
-                    <h2 className="text-xl font-bold mb-2">Pending Requests</h2>
-                    {requests.length === 0 ? (
-                      <p>No pending requests</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {requests.map((req) => (
-                          <li
-                            key={req.id}
-                            className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg flex justify-between"
-                          >
-                            <span>{req.email}</span>
-                            <span className="italic text-sm text-gray-500">{req.status}</span>
-                          </li>
-                        ))}
-                      </ul>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-gray-700 text-left">
+                <th className="p-2">Email</th>
+                <th className="p-2">App</th>
+                <th className="p-2">Requested Role</th>
+                <th className="p-2">Status</th>
+                <th className="p-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((req) => (
+                <tr key={req.id} className="border-b border-gray-600">
+                  <td className="p-2">{req.email}</td>
+                  <td className="p-2">{req.app}</td>
+                  <td className="p-2">{req.requested_role}</td>
+                  <td className="p-2">{req.status}</td>
+                  <td className="p-2 flex flex-wrap gap-2">
+                    {req.status === "pending" && (
+                      <>
+                        <select
+                          id={`role-${req.id}`}
+                          defaultValue={req.requested_role}
+                          className="px-2 py-1 rounded bg-gray-700 text-white"
+                        >
+                          {roleOptions[req.app as keyof typeof roleOptions].map((role) => (
+                            <option key={role} value={role}>
+                              {role}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() =>
+                            handleDecision(
+                              req,
+                              "approve",
+                              (document.getElementById(`role-${req.id}`) as HTMLSelectElement).value
+                            )
+                          }
+                          disabled={loading}
+                          className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-500 transition-all"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => handleDecision(req, "reject")}
+                          disabled={loading}
+                          className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-500 transition-all"
+                        >
+                          Reject
+                        </button>
+                      </>
                     )}
-                  </div>
-                )}
-              </div>
-            {msg && <div className="text-rose-400 text-sm mt-2">{msg}</div>}
-          </div>
+                    {req.status !== "pending" && <span>{req.status}</span>}
+
+                    {/* ✅ Delete Button */}
+                    <button
+                      onClick={() => handleDelete(req.id)}
+                      disabled={loading}
+                      className="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-500 transition-all"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
-    </main>
+    </div>
   );
 }
