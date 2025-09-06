@@ -45,21 +45,21 @@ export default function SuperAdminPage() {
 
     try {
       if (decision === "approve" && newRole) {
-  // 1. Ensure profile exists first (RLS-safe)
-  const { error: profileError } = await supabase.rpc("insert_profile_for_user", {
-    p_user_id: request.user_id,
-    p_email: request.email,
-  });
+  // 1. Ensure profile exists
+  const { error: profileError } = await supabase.rpc("upsert_profile", {
+  p_id: request.user_id,
+  p_email: request.email,
+});
+
   if (profileError) throw profileError;
 
-// 2. Insert or update role in user_roles (RLS-safe)
-const { error: roleError } = await supabase.rpc("insert_user_role", {
-  p_user_id: request.user_id,
-  p_app: request.app,
-  p_role: newRole,
-});
-if (roleError) throw roleError;
-
+  // 2. Insert or update role via RPC (RLS-safe)
+  const { error: roleError } = await supabase.rpc("insert_user_role", {
+    p_user_id: request.user_id,
+    p_app: request.app.toLowerCase(), // 'lms', 'scb', etc.
+    p_role: newRole,
+  });
+  if (roleError) throw roleError;
 
   // 3. Update request status
   const { error: reqError } = await supabase
@@ -68,6 +68,7 @@ if (roleError) throw roleError;
     .eq("id", request.id);
   if (reqError) throw reqError;
 }
+
  else if (decision === "reject") {
         const { error } = await supabase
           .from("access_requests")
