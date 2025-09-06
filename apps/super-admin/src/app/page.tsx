@@ -12,16 +12,17 @@ interface AccessRequest {
   user_id: string;
 }
 
-const roleOptions = {
-  SCB: ["student", "admin"],
-  LMS: ["student", "teacher", "admin"],
-  JR: ["student", "admin", "recruiter"],
+const roleOptions: Record<string, string[]> = {
+  scb: ["student", "admin"],
+  lms: ["student", "teacher", "admin"],
+  jr: ["student", "admin", "recruiter"],
 };
 
 export default function SuperAdminPage() {
   const supabase = createClientComponentClient();
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [selectedRoles, setSelectedRoles] = useState<Record<string, string>>({});
 
   const fetchRequests = async () => {
     const { data, error } = await supabase.from("access_requests").select("*");
@@ -29,6 +30,12 @@ export default function SuperAdminPage() {
       console.error("Error fetching requests:", error.message);
     } else if (data) {
       setRequests(data);
+      // initialize selected roles state
+      const initRoles: Record<string, string> = {};
+      data.forEach((r) => {
+        initRoles[r.id] = r.requested_role;
+      });
+      setSelectedRoles(initRoles);
     }
   };
 
@@ -38,43 +45,40 @@ export default function SuperAdminPage() {
 
   const handleDecision = async (
     request: AccessRequest,
-    decision: "approve" | "reject",
-    newRole?: string
+    decision: "approve" | "reject"
   ) => {
     setLoading(true);
 
     try {
-      if (decision === "approve" && newRole) {
-  // 1. Ensure profile exists
-  const { error: profileError } = await supabase.rpc("upsert_profile", {
-  p_id: request.user_id,
-  p_email: request.email,
-});
+      if (decision === "approve") {
+        const newRole = selectedRoles[request.id];
 
-  if (profileError) throw profileError;
+        // 1. Ensure profile exists
+        const { error: profileError } = await supabase.rpc("upsert_profile", {
+          p_id: request.user_id,
+          p_email: request.email,
+        });
+        if (profileError) throw profileError;
 
-  // 2. Insert or update role via RPC (RLS-safe)
-  const { error: roleError } = await supabase.rpc("insert_user_role", {
-    p_user_id: request.user_id,
-    p_app: request.app.toLowerCase(), // 'lms', 'scb', etc.
-    p_role: newRole,
-  });
-  if (roleError) throw roleError;
+        // 2. Insert/update role
+        const { error: roleError } = await supabase.rpc("insert_user_role", {
+          p_user_id: request.user_id,
+          p_app: request.app.toLowerCase(),
+          p_role: newRole,
+        });
+        if (roleError) throw roleError;
 
-  // 3. Update request status
-  const { error: reqError } = await supabase
-    .from("access_requests")
-    .update({ status: "approved" })
-    .eq("id", request.id);
-  if (reqError) throw reqError;
-}
-
- else if (decision === "reject") {
+        // 3. Update request status
+        const { error: reqError } = await supabase
+          .from("access_requests")
+          .update({ status: "approved" })
+          .eq("id", request.id);
+        if (reqError) throw reqError;
+      } else if (decision === "reject") {
         const { error } = await supabase
           .from("access_requests")
           .update({ status: "rejected" })
           .eq("id", request.id);
-
         if (error) throw error;
       }
     } catch (err) {
@@ -90,7 +94,10 @@ export default function SuperAdminPage() {
 
     setLoading(true);
     try {
-      const { error } = await supabase.from("access_requests").delete().eq("id", id);
+      const { error } = await supabase
+        .from("access_requests")
+        .delete()
+        .eq("id", id);
       if (error) throw error;
     } catch (err) {
       console.error("Delete error:", err);
@@ -129,24 +136,25 @@ export default function SuperAdminPage() {
                     {req.status === "pending" && (
                       <>
                         <select
-                          id={`role-${req.id}`}
-                          defaultValue={req.requested_role}
+                          value={selectedRoles[req.id]}
+                          onChange={(e) =>
+                            setSelectedRoles((prev) => ({
+                              ...prev,
+                              [req.id]: e.target.value,
+                            }))
+                          }
                           className="px-2 py-1 rounded bg-gray-700 text-white"
                         >
-                          {roleOptions[req.app as keyof typeof roleOptions].map((role) => (
-                            <option key={role} value={role}>
-                              {role}
-                            </option>
-                          ))}
+                          {(roleOptions[req.app.toLowerCase()] || []).map(
+                            (role) => (
+                              <option key={role} value={role}>
+                                {role}
+                              </option>
+                            )
+                          )}
                         </select>
                         <button
-                          onClick={() =>
-                            handleDecision(
-                              req,
-                              "approve",
-                              (document.getElementById(`role-${req.id}`) as HTMLSelectElement).value
-                            )
-                          }
+                          onClick={() => handleDecision(req, "approve")}
                           disabled={loading}
                           className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-500 transition-all"
                         >
@@ -163,7 +171,6 @@ export default function SuperAdminPage() {
                     )}
                     {req.status !== "pending" && <span>{req.status}</span>}
 
-                    {/* ✅ Delete Button */}
                     <button
                       onClick={() => handleDelete(req.id)}
                       disabled={loading}
