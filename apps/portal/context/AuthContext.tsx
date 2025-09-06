@@ -1,7 +1,7 @@
 // apps/portal/context/AuthContext.tsx
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
 export type User = { id: string; email: string | null };
@@ -34,12 +34,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } = await supabase.auth.getSession();
 
         if (!mounted) return;
-
-        setUser(
-          session?.user
-            ? { id: session.user.id, email: session.user.email ?? null }
-            : null
-        );
+        setUser(session?.user ? { id: session.user.id, email: session.user.email ?? null } : null);
       } catch (err) {
         console.error("[auth] getSession error:", err);
       } finally {
@@ -50,6 +45,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     init();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // log for debugging as requested in your system design
       console.info("[auth] state changed", _event);
       setUser(session?.user ? { id: session.user.id, email: session.user.email ?? null } : null);
     });
@@ -82,11 +78,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signOut }}>
-      {children}
-    </AuthContext.Provider>
+  // memoize to avoid unnecessary re-renders for consumers
+  const value = useMemo(
+    () => ({ user, loading, signInWithGoogle, signOut }),
+    [user, loading]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => useContext(AuthContext);
