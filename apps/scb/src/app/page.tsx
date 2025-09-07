@@ -1,15 +1,25 @@
+// apps/scb/app/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClientComponentClient, User } from "@supabase/auth-helpers-nextjs";
+
+type Status = "loading" | "approved" | "rejected" | "pending" | "none";
+
+interface ErrorType {
+  message?: string;
+}
 
 export default function SCBPage() {
   const supabase = createClientComponentClient();
+  const router = useRouter();
+
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "approved" | "rejected" | "pending" | "none">("loading");
+  const [status, setStatus] = useState<Status>("loading");
 
-  // 🔹 Listen for user session
+  // Session listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -24,7 +34,7 @@ export default function SCBPage() {
     };
   }, [supabase]);
 
-  // 🔹 Check role or request status
+  // Role / request check
   useEffect(() => {
     const checkProfile = async () => {
       if (!user) {
@@ -32,42 +42,41 @@ export default function SCBPage() {
         return;
       }
 
-      // First check if user has an approved role
-      const { data: roleData, error: roleError } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", user.id)
-        .eq("app", "scb")
-        .maybeSingle();
+      try {
+        const { data: roleData, error: roleError } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .eq("app", "scb")
+          .maybeSingle();
 
-      if (roleError) {
-        console.error("Role check error:", roleError.message);
-        setStatus("none");
-        return;
-      }
+        if (roleError) throw roleError;
 
-      if (roleData) {
-        setRole(roleData.role);
-        setStatus("approved");
-        return;
-      }
+        if (roleData) {
+          setRole(roleData.role);
+          setStatus("approved");
+          return;
+        }
 
-      // If no role, check if request exists
-      const { data: request, error: reqError } = await supabase
-        .from("access_requests")
-        .select("status")
-        .eq("user_id", user.id)
-        .eq("app", "scb")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        const { data: request, error: reqError } = await supabase
+          .from("access_requests")
+          .select("status")
+          .eq("user_id", user.id)
+          .eq("app", "scb")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (reqError) {
-        console.error("Request check error:", reqError.message);
-        setStatus("none");
-      } else if (request) {
-        setStatus(request.status as "pending" | "rejected");
-      } else {
+        if (reqError) throw reqError;
+
+        if (request) {
+          setStatus(request.status as Status);
+        } else {
+          setStatus("none");
+        }
+      } catch (err: unknown) {
+        const e = err as ErrorType;
+        console.error("Check profile error:", e.message ?? err);
         setStatus("none");
       }
     };
@@ -75,15 +84,22 @@ export default function SCBPage() {
     checkProfile();
   }, [user, supabase]);
 
-  // 🔹 Login with Google
+  // 🚀 Safe redirect when approved
+  useEffect(() => {
+    if (status === "approved" && role) {
+      router.push("/dashboard");
+    }
+  }, [status, role, router]);
+
+  // Login
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: "http://localhost:3000" }, // 🔧 change in prod
+      options: { redirectTo: "http://localhost:3000" },
     });
   };
 
-  // 🔹 Logout
+  // Logout
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -91,42 +107,44 @@ export default function SCBPage() {
     setStatus("none");
   };
 
-  // 🔹 Request Access (prevent duplicate pending requests)
+  // Request access
   const handleRequest = async () => {
     if (!user) {
       alert("⚠️ Please login before submitting.");
       return;
     }
 
-    // Check if a pending request already exists
-    const { data: existing } = await supabase
-      .from("access_requests")
-      .select("id, status")
-      .eq("user_id", user.id)
-      .eq("app", "SCB")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    try {
+      const { data: existing } = await supabase
+        .from("access_requests")
+        .select("id, status")
+        .eq("user_id", user.id)
+        .eq("app", "scb")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (existing && existing.status === "pending") {
-      alert("⏳ You already have a pending request.");
-      setStatus("pending");
-      return;
-    }
+      if (existing && existing.status === "pending") {
+        alert("⏳ You already have a pending request.");
+        setStatus("pending");
+        return;
+      }
 
-    const { error } = await supabase.from("access_requests").insert({
-      user_id: user.id,
-      email: user.email,
-      app: "SCB",
-      requested_role: "student",
-      status: "pending",
-    });
+      const { error } = await supabase.from("access_requests").insert({
+        user_id: user.id,
+        email: user.email,
+        app: "scb",
+        requested_role: "student",
+        status: "pending",
+      });
 
-    if (error) {
-      alert("❌ Failed to submit request: " + error.message);
-    } else {
+      if (error) throw error;
+
       alert("✅ Request submitted successfully!");
       setStatus("pending");
+    } catch (err: unknown) {
+      const e = err as ErrorType;
+      alert("❌ Failed to submit request: " + (e.message ?? "unknown"));
     }
   };
 
@@ -143,16 +161,6 @@ export default function SCBPage() {
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-all"
             >
               Login with Google
-            </button>
-          </>
-        ) : status === "approved" ? (
-          <>
-            <p className="mb-4">✅ Welcome, {user.email}! Role: {role}</p>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition-all"
-            >
-              Logout
             </button>
           </>
         ) : status === "pending" ? (
@@ -175,7 +183,7 @@ export default function SCBPage() {
               Logout
             </button>
           </>
-        ) : (
+        ) : status === "none" ? (
           <>
             <p className="mb-4">Welcome, {user.email}</p>
             <button
@@ -191,7 +199,7 @@ export default function SCBPage() {
               Logout
             </button>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

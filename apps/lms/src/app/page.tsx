@@ -1,15 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClientComponentClient, User } from "@supabase/auth-helpers-nextjs";
+
+type Status = "loading" | "approved" | "rejected" | "pending" | "none";
+
+interface ErrorType {
+  message?: string;
+}
 
 export default function LMSPage() {
   const supabase = createClientComponentClient();
+  const router = useRouter();
+
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "approved" | "rejected" | "pending" | "none">("loading");
+  const [status, setStatus] = useState<Status>("loading");
 
-  // 🔹 Session listener
+  // Session listener
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -24,7 +33,7 @@ export default function LMSPage() {
     };
   }, [supabase]);
 
-  // 🔹 Role / Request check
+  // Role / request check
   useEffect(() => {
     const checkProfile = async () => {
       if (!user) {
@@ -33,12 +42,11 @@ export default function LMSPage() {
       }
 
       try {
-        // 1️⃣ Check existing approved role
         const { data: roleData, error: roleError } = await supabase
           .from("user_roles")
           .select("role")
           .eq("user_id", user.id)
-          .eq("app", "lms") // ✅ lowercase app key
+          .eq("app", "lms")
           .maybeSingle();
 
         if (roleError) throw roleError;
@@ -49,12 +57,11 @@ export default function LMSPage() {
           return;
         }
 
-        // 2️⃣ Else check latest access request
         const { data: request, error: reqError } = await supabase
           .from("access_requests")
           .select("status")
           .eq("user_id", user.id)
-          .eq("app", "LMS") // ✅ match how you stored it in SuperAdmin
+          .eq("app", "lms")
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -62,12 +69,13 @@ export default function LMSPage() {
         if (reqError) throw reqError;
 
         if (request) {
-          setStatus(request.status as "pending" | "rejected");
+          setStatus(request.status as Status);
         } else {
           setStatus("none");
         }
-      } catch (err: any) {
-        console.error("Check profile error:", err.message);
+      } catch (err: unknown) {
+        const e = err as ErrorType;
+        console.error("Check profile error:", e.message ?? err);
         setStatus("none");
       }
     };
@@ -75,15 +83,22 @@ export default function LMSPage() {
     checkProfile();
   }, [user, supabase]);
 
-  // 🔹 Login
+  // 🚀 Safe redirect when approved
+  useEffect(() => {
+    if (status === "approved" && role) {
+      router.push("/dashboard");
+    }
+  }, [status, role, router]);
+
+  // Login
   const handleLogin = async () => {
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: "http://localhost:3001" }, // ✅ LMS app port
+      options: { redirectTo: "http://localhost:3001" },
     });
   };
 
-  // 🔹 Logout
+  // Logout
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -91,7 +106,7 @@ export default function LMSPage() {
     setStatus("none");
   };
 
-  // 🔹 Request Access
+  // Request access
   const handleRequest = async () => {
     if (!user) {
       alert("⚠️ Please login before submitting.");
@@ -99,12 +114,11 @@ export default function LMSPage() {
     }
 
     try {
-      // Prevent duplicate pending requests
       const { data: existing } = await supabase
         .from("access_requests")
         .select("id, status")
         .eq("user_id", user.id)
-        .eq("app", "LMS") // ✅ consistent
+        .eq("app", "lms")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -118,7 +132,7 @@ export default function LMSPage() {
       const { error } = await supabase.from("access_requests").insert({
         user_id: user.id,
         email: user.email,
-        app: "LMS", // ✅ uppercase key for request
+        app: "lms",
         requested_role: "student",
         status: "pending",
       });
@@ -127,8 +141,9 @@ export default function LMSPage() {
 
       alert("✅ Request submitted successfully!");
       setStatus("pending");
-    } catch (err: any) {
-      alert("❌ Failed to submit request: " + err.message);
+    } catch (err: unknown) {
+      const e = err as ErrorType;
+      alert("❌ Failed to submit request: " + (e.message ?? "unknown"));
     }
   };
 
@@ -145,16 +160,6 @@ export default function LMSPage() {
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-all"
             >
               Login with Google
-            </button>
-          </>
-        ) : status === "approved" ? (
-          <>
-            <p className="mb-4">✅ Welcome, {user.email}! Role: {role}</p>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition-all"
-            >
-              Logout
             </button>
           </>
         ) : status === "pending" ? (
@@ -177,7 +182,7 @@ export default function LMSPage() {
               Logout
             </button>
           </>
-        ) : (
+        ) : status === "none" ? (
           <>
             <p className="mb-4">Welcome, {user.email}</p>
             <button
@@ -193,7 +198,7 @@ export default function LMSPage() {
               Logout
             </button>
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );
