@@ -13,7 +13,7 @@ interface AccessRequest {
 }
 
 const roleOptions: Record<string, string[]> = {
-  scb: ["student", "admin"],
+  scb: ["student", "admin", "counselor"],
   lms: ["student", "teacher", "admin"],
   jr: ["student", "admin", "recruiter"],
 };

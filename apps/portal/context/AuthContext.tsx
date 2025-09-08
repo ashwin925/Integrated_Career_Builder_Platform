@@ -1,10 +1,14 @@
-// apps/portal/context/AuthContext.tsx
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
-export type User = { id: string; email: string | null };
+// ---- Types ----
+export type User = {
+  id: string;
+  email: string | null;
+  role?: string; // ✅ add role here
+};
 
 type AuthContextType = {
   user: User | null;
@@ -20,6 +24,7 @@ const AuthContext = createContext<AuthContextType>({
   signOut: async () => {},
 });
 
+// ---- AuthProvider ----
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,7 +39,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } = await supabase.auth.getSession();
 
         if (!mounted) return;
-        setUser(session?.user ? { id: session.user.id, email: session.user.email ?? null } : null);
+
+        if (session?.user) {
+          const baseUser: User = {
+            id: session.user.id,
+            email: session.user.email ?? null,
+          };
+
+          // ✅ fetch role from user_roles for SCB
+          const { data: roleData, error } = await supabase
+            .from("user_roles")
+            .select("role")
+            .eq("user_id", session.user.id)
+            .eq("app", "scb") // 👈 IMPORTANT: change "scb" -> "lms" or "jr" in those apps
+            .single();
+
+          if (error) {
+            console.warn("[auth] no role found in user_roles:", error.message);
+            setUser({ ...baseUser, role: "Guest" });
+          } else {
+            setUser({ ...baseUser, role: roleData?.role ?? "Guest" });
+          }
+        } else {
+          setUser(null);
+        }
       } catch (err) {
         console.error("[auth] getSession error:", err);
       } finally {
@@ -44,11 +72,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     init();
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      // log for debugging as requested in your system design
-      console.info("[auth] state changed", _event);
-      setUser(session?.user ? { id: session.user.id, email: session.user.email ?? null } : null);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        console.info("[auth] state changed", _event);
+        if (session?.user) {
+          const baseUser: User = {
+            id: session.user.id,
+            email: session.user.email ?? null,
+          };
+
+          const { data: roleData, error } = await supabase
+            .from("user_roles")
+            .select("role")
+            .eq("user_id", session.user.id)
+            .eq("app", "scb")
+            .single();
+
+          if (error) {
+            setUser({ ...baseUser, role: "Guest" });
+          } else {
+            setUser({ ...baseUser, role: roleData?.role ?? "Guest" });
+          }
+        } else {
+          setUser(null);
+        }
+      }
+    );
 
     return () => {
       mounted = false;
@@ -78,7 +127,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // memoize to avoid unnecessary re-renders for consumers
   const value = useMemo(
     () => ({ user, loading, signInWithGoogle, signOut }),
     [user, loading]
